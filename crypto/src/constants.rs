@@ -19,3 +19,5 @@ pub const R4: [[i64; 2]; 8] = [
     [58, 22],
     [32, 32],
 ];
+
+pub const PADDING: usize = 8;

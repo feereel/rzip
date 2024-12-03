@@ -1,4 +1,4 @@
-use crate::constants;
+use super::constants;
 
 pub struct Mix{
     d: usize,
