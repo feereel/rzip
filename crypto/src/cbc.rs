@@ -2,16 +2,19 @@ use crate::utils::load_word;
 
 use super::constants::*;
 use super::utils::store_word;
-use super::{CipherBlock,CipherError};
+use super::{CipherBlock,CipherError, CipherProcessor};
 
+use std::sync::Arc;
+
+#[derive(Clone)]
 pub struct CBCProcessor {
-    block: Box<dyn CipherBlock>,
+    block: Arc<dyn CipherBlock>,
     iv: Vec<u8>,
     block_size: usize,
 }
 
 impl CBCProcessor {
-    pub fn new (block: Box<dyn CipherBlock>, iv: Vec<u8>) -> Result<CBCProcessor, CipherError> {
+    pub fn new (block: Arc<dyn CipherBlock>, iv: Vec<u8>) -> Result<CBCProcessor, CipherError> {
         if iv.len() != block.get_block_size() {
             return Err(CipherError::InvalidIVLength);
         }
@@ -27,7 +30,36 @@ impl CBCProcessor {
 }
 
 impl CBCProcessor {
+    fn decrypt_block(&self, s1_block: &[u8],s2_block: &[u8], dst_block: &mut [u8]) {
+        self.block.decrypt(s2_block, dst_block).unwrap();
+
+        dst_block.iter_mut()
+            .zip(s1_block.iter())
+            .for_each(|(x1, x2)| *x1 ^= x2);
+    }
+
+    fn encrypt_block(&self, src_block: &[u8], dst_block: &mut [u8], state: &mut [u8]) {
+        state.iter_mut()
+            .zip(src_block.iter())
+            .for_each(|(x1, x2)| *x1 ^= x2);
+
+        let _state = state.to_vec();
+
+        self.block.encrypt(&_state, state).unwrap();
+        dst_block.clone_from_slice(&state);
+    }
+
     pub fn encrypt_blocks(&self, src: &[u8]) -> Vec<u8> {
+        CipherProcessor::encrypt_blocks(self, src)
+    }
+
+    pub fn decrypt_blocks(&self, src: &[u8]) -> Result<Vec<u8>, CipherError>  {
+        CipherProcessor::decrypt_blocks(self, src)
+    }
+}
+
+impl CipherProcessor for CBCProcessor {
+    fn encrypt_blocks(&self, src: &[u8]) -> Vec<u8> {
         let last_block_size = src.len() % self.block_size;
         let padding_in_last_block = self.block_size - last_block_size;
         let block_count = src.len() / self.block_size;
@@ -77,20 +109,7 @@ impl CBCProcessor {
         dst
     }
 
-    fn encrypt_block(&self, src_block: &[u8], dst_block: &mut [u8], state: &mut [u8]) {
-        state.iter_mut()
-            .zip(src_block.iter())
-            .for_each(|(x1, x2)| *x1 ^= x2);
-
-        let _state = state.to_vec();
-
-        self.block.encrypt(&_state, state).unwrap();
-        dst_block.clone_from_slice(&state);
-    }
-}
-
-impl CBCProcessor {
-    pub fn decrypt_blocks(&self, src: &[u8]) -> Result<Vec<u8>, CipherError> {
+    fn decrypt_blocks(&self, src: &[u8]) -> Result<Vec<u8>, CipherError> {
         let block_count = src.len() / self.block_size;
 
         if src.len() % self.block_size != 0 || block_count < 2 {
@@ -147,15 +166,7 @@ impl CBCProcessor {
         Ok(dst)
     }
 
-    fn decrypt_block(&self, s1_block: &[u8],s2_block: &[u8], dst_block: &mut [u8]) {
-        self.block.decrypt(s2_block, dst_block).unwrap();
-
-        dst_block.iter_mut()
-            .zip(s1_block.iter())
-            .for_each(|(x1, x2)| *x1 ^= x2);
-    }
 }
-
 
 
 #[cfg(test)]
@@ -170,7 +181,7 @@ mod cbc_encrypter_test {
         let iv: Vec<u8> = (0..31).rev().collect();
         
         let c = Cipher256::new(&key, &tweak).unwrap();
-        let block: Box<dyn CipherBlock> = Box::new(c);
+        let block: Arc<dyn CipherBlock> = Arc::new(c);
 
         let r = CBCProcessor::new(block, iv);
 
@@ -184,7 +195,7 @@ mod cbc_encrypter_test {
         let iv: Vec<u8> = (0..32).rev().collect();
         
         let c = Cipher256::new(&key, &tweak).unwrap();
-        let block: Box<dyn CipherBlock> = Box::new(c);
+        let block: Arc<dyn CipherBlock> = Arc::new(c);
         let cbc = CBCProcessor::new(block, iv).unwrap();
 
         let p: Vec<u8> = (0..32).collect();
@@ -217,7 +228,7 @@ mod cbc_encrypter_test {
         let plaintext: Vec<u8> = (0..121).rev().collect();
         
         let c = Cipher256::new(&key, &tweak).unwrap();
-        let block: Box<dyn CipherBlock> = Box::new(c);
+        let block: Arc<dyn CipherBlock> = Arc::new(c);
 
         let cbc = CBCProcessor::new(block, iv).unwrap();
 
@@ -258,7 +269,7 @@ mod cbc_decrypter_test {
         ];
 
         let c = Cipher256::new(&key, &tweak).unwrap();
-        let block: Box<dyn CipherBlock> = Box::new(c);
+        let block: Arc<dyn CipherBlock> = Arc::new(c);
         let cbc = CBCProcessor::new(block, iv).unwrap();
 
         let plaintext = cbc.decrypt_blocks(&ciphertext).unwrap();

@@ -1,5 +1,7 @@
 use super::{constants::*, utils::*, mix::*, CipherError, CipherBlock};
 
+use std::sync::Arc;
+
 #[derive(Debug)]
 pub struct Cipher256 {
     t:  [u64; TWEAK_COUNT],
@@ -285,7 +287,7 @@ mod cipher256_test {
         let mut plaintext: Vec<u8> = vec![0; 32];
 
         let c = Cipher256::new(&key, &tweak).unwrap();
-        let block: Box<dyn CipherBlock> = Box::new(c);
+        let block: Arc<dyn CipherBlock> = Arc::new(c);
         let r = block.decrypt(&ciphertext, &mut plaintext);
 
         assert!(r.is_err());
@@ -305,7 +307,7 @@ mod cipher256_test {
         let mut plaintext: Vec<u8> = vec![0; 31];
 
         let c = Cipher256::new(&key, &tweak).unwrap();
-        let block: Box<dyn CipherBlock> = Box::new(c);
+        let block: Arc<dyn CipherBlock> = Arc::new(c);
         let r = block.decrypt(&ciphertext, &mut plaintext);
 
         assert!(r.is_err());
@@ -325,7 +327,7 @@ mod cipher256_test {
         let mut plaintext: Vec<u8> = vec![0; 32];
         
         let c = Cipher256::new(&key, &tweak).unwrap();
-        let block: Box<dyn CipherBlock> = Box::new(c);
+        let block: Arc<dyn CipherBlock> = Arc::new(c);
         block.decrypt(&ciphertext, &mut plaintext).unwrap();
 
         let expected: Vec<u8> = vec![
