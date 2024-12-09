@@ -11,8 +11,8 @@ fn compress_decompress_same_value() {
 
     let lzw = LZW::new();
 
-    for _ in 0..100 {
-        let length = rng.gen_range(0..1000);
+    for _ in 0..1 {
+        let length = rng.gen_range(1024*1024*1024..1024*1024*1024+1);
         let uncompressed1: Vec<u8> = (0..length).map(|_| rng.gen()).collect();
 
         let compressed = lzw.compress(&uncompressed1);
@@ -30,7 +30,7 @@ fn compress_decompress_compressor() {
     let lzw: Arc<dyn Compressor> = Arc::new(lzw);
 
     for _ in 0..5 {
-        let length = rng.gen_range(100..2000);
+        let length = rng.gen_range(0..500);
         let uncompressed1: Vec<u8> = (0..length).map(|_| rng.gen()).collect();
 
         let compressed = lzw.compress(&uncompressed1);

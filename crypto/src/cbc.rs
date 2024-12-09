@@ -14,7 +14,7 @@ pub struct CBCProcessor {
 }
 
 impl CBCProcessor {
-    pub fn new (block: Arc<dyn CipherBlock>, iv: Vec<u8>) -> Result<CBCProcessor, CipherError> {
+    pub fn new (block: Arc<dyn CipherBlock>, iv: &[u8]) -> Result<CBCProcessor, CipherError> {
         if iv.len() != block.get_block_size() {
             return Err(CipherError::InvalidIVLength);
         }
@@ -22,7 +22,7 @@ impl CBCProcessor {
         let cbc = CBCProcessor{
             block_size: block.get_block_size(),
             block,
-            iv,
+            iv:iv.to_vec(),
         };
 
         Ok(cbc)
@@ -183,7 +183,7 @@ mod cbc_encrypter_test {
         let c = Cipher256::new(&key, &tweak).unwrap();
         let block: Arc<dyn CipherBlock> = Arc::new(c);
 
-        let r = CBCProcessor::new(block, iv);
+        let r = CBCProcessor::new(block, &iv);
 
         assert!(r.is_err());
     }
@@ -196,7 +196,7 @@ mod cbc_encrypter_test {
         
         let c = Cipher256::new(&key, &tweak).unwrap();
         let block: Arc<dyn CipherBlock> = Arc::new(c);
-        let cbc = CBCProcessor::new(block, iv).unwrap();
+        let cbc = CBCProcessor::new(block, &iv).unwrap();
 
         let p: Vec<u8> = (0..32).collect();
         let ciphertext = cbc.encrypt_blocks(&p);
@@ -230,7 +230,7 @@ mod cbc_encrypter_test {
         let c = Cipher256::new(&key, &tweak).unwrap();
         let block: Arc<dyn CipherBlock> = Arc::new(c);
 
-        let cbc = CBCProcessor::new(block, iv).unwrap();
+        let cbc = CBCProcessor::new(block, &iv).unwrap();
 
         let ciphertext = cbc.encrypt_blocks(&plaintext);
 
@@ -270,7 +270,7 @@ mod cbc_decrypter_test {
 
         let c = Cipher256::new(&key, &tweak).unwrap();
         let block: Arc<dyn CipherBlock> = Arc::new(c);
-        let cbc = CBCProcessor::new(block, iv).unwrap();
+        let cbc = CBCProcessor::new(block, &iv).unwrap();
 
         let plaintext = cbc.decrypt_blocks(&ciphertext).unwrap();
 

@@ -7,3 +7,4 @@ edition = "2021"
 [dependencies]
 crypto = { path = "./crypto" }
 compressor = { path = "./compressor" }
+archiver = { path = "./archiver" }
