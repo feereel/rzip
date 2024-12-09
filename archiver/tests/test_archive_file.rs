@@ -55,23 +55,6 @@ fn encrypt_rnd(afile: ArchiveFile) -> Result<ArchiveFile, ArchiveError> {
 
 
 #[test]
-fn compress_decompress_same_value() {
-    let mut rng = rand::thread_rng();
-
-    let lzw = LZW::new();
-
-    for _ in 0..100 {
-        let length = rng.gen_range(0..1000);
-        let uncompressed1: Vec<u8> = (0..length).map(|_| rng.gen()).collect();
-
-        let compressed = lzw.compress(&uncompressed1);
-        let uncompressed2 = lzw.decompress(&compressed).unwrap();
-
-        assert_eq!(uncompressed1, uncompressed2);
-    }
-}
-
-#[test]
 fn new_errors() {
 
     let afile = ArchiveFile::from_file(&get_path(NOEXIST_FILE), Path::new(env!("CARGO_MANIFEST_DIR")));
@@ -217,7 +200,7 @@ fn decompress_errors() {
 
 #[test]
 fn decompress_result() {
-    let afile = ArchiveFile::from_file(&get_path(TEST_FILE3), Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
+    let afile = ArchiveFile::from_file(&get_path(TEST_TEXT), Path::new(env!("CARGO_MANIFEST_DIR"))).unwrap();
 
     let lzw = LZW::new();
     let compressor:Arc<dyn Compressor>  = Arc::new(lzw);

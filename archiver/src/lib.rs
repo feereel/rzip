@@ -4,12 +4,11 @@ mod utils;
 use utils::get_absolute_paths;
 use afile::*;
 
+use std::fs;
 use std::fs::File;
 use std::io::Write;
 use std::io::Read;
-use std::iter::zip;
 use std::sync::mpsc::Receiver;
-use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::path::Path;
 
@@ -38,13 +37,13 @@ pub enum ArchiveError {
     IncorrectFileType,
     DecompressError,
     DecryptError,
+    CompressingError,
     FilePathError,
     DataWritingError,
     DifferentMagickValue,
 }
 
 const MAGICK: [u8; 8] = [0x52, 0x5a, 0x88, 0x12, 0x78, 0xf1, 0x7, 0x13];
-const SKIP_COMPRESS_SIZE: usize = 1024; // 1 kb
 
 pub struct Archiver {
     target_path: String,
@@ -56,7 +55,9 @@ pub struct Archiver {
 
 impl Archiver {
     pub fn new(target_path: &Path, n_workers: usize, compressor: Option<Arc<dyn Compressor>>, processor: Option<Arc<dyn CipherProcessor>>) -> Self {
+        let target_path = fs::canonicalize(target_path).unwrap();
         let target_path = target_path.to_string_lossy().into_owned();
+
         
         Self {
             target_path,
@@ -82,7 +83,6 @@ impl Archiver {
             let compressor = self.compressor.clone();
             let processor = self.processor.clone();
             let target_path_clone = target_path.clone();
-            println!("target_path: {}", target_path_clone.to_str().unwrap());
 
             workers.execute_to(tx.clone(), Thunk::of(move ||{
                 worker_zip(&path, &target_path_clone, compressor, processor)
@@ -102,24 +102,15 @@ impl Archiver {
         
         let workers = Pool::<ThunkWorker<Result<ArchiveFile, ArchiveError>>>::new(self.n_workers);
 
-        let mut i = 0;
         let (tx, rx) = channel();
         self.rx = Some(rx);
 
         for _ in 0..afiles_count {
             let afile = Archiver::load_afile(&file, encrypted)?;
-            println!("afile.rel_path: {:?}", afile.rel_path);
-            println!("afile.compressed: {:?}", afile.is_compressed());
-            println!("afile.encrypted: {:?}", afile.is_encrypted());
-            println!("afile.size: {:?}", afile.size());
-            println!("afile.body_size: {:?}", afile.body_size());
 
             let compressor = self.compressor.clone();
             let processor = self.processor.clone();
 
-            println!("Files sended: {}/{}", i, afiles_count);
-            i += 1;
-        
             workers.execute_to(tx.clone(), Thunk::of(move || {
                 worker_unzip(afile, compressor, processor)
             }));
@@ -285,7 +276,7 @@ impl Archiver {
             println!("Files zipped: {}/{}, size: {}, path: {}", without_errors, afiles_count, afile.size(), afile.rel_path);
 
             Archiver::store_afile(&file, afile)?;
-            
+
             without_errors += 1;
         }
         

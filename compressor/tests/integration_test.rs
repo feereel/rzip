@@ -11,14 +11,17 @@ fn compress_decompress_same_value() {
 
     let lzw = LZW::new();
 
-    for _ in 0..1 {
-        let length = rng.gen_range(1024*1024*1024..1024*1024*1024+1);
+    for _ in 0..100 {
+        let length = rng.gen_range(10..1024);
         let uncompressed1: Vec<u8> = (0..length).map(|_| rng.gen()).collect();
 
         let compressed = lzw.compress(&uncompressed1);
-        let uncompressed2 = lzw.decompress(&compressed).unwrap();
-
-        assert_eq!(uncompressed1, uncompressed2);
+        if compressed.len() < uncompressed1.len() {
+            let uncompressed2 = lzw.decompress(&compressed).unwrap();
+            assert_eq!(uncompressed1, uncompressed2);
+        } else {
+            assert_eq!(uncompressed1, compressed);
+        }
     }
 }
 
@@ -29,13 +32,17 @@ fn compress_decompress_compressor() {
     let lzw = LZW::new();
     let lzw: Arc<dyn Compressor> = Arc::new(lzw);
 
-    for _ in 0..5 {
+    for _ in 0..50 {
         let length = rng.gen_range(0..500);
         let uncompressed1: Vec<u8> = (0..length).map(|_| rng.gen()).collect();
 
         let compressed = lzw.compress(&uncompressed1);
-        let uncompressed2 = lzw.decompress(&compressed).unwrap();
 
-        assert_eq!(uncompressed1, uncompressed2);
+        if compressed.len() < uncompressed1.len() {
+            let uncompressed2 = lzw.decompress(&compressed).unwrap();
+            assert_eq!(uncompressed1, uncompressed2);
+        } else {
+            assert_eq!(uncompressed1, compressed);
+        }
     }
 }

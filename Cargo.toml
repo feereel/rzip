@@ -5,6 +5,9 @@ edition = "2021"
 
 
 [dependencies]
+clap = "4.5.23"
+rand = "0.8.5"
+sha2 = "0.10"
 crypto = { path = "./crypto" }
 compressor = { path = "./compressor" }
 archiver = { path = "./archiver" }

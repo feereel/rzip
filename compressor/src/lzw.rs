@@ -3,7 +3,6 @@ use super::Compressor;
 
 use std::collections::HashMap;
 
-
 #[derive(Debug)]
 pub struct LZW {
     init_dict: HashMap<Vec<u8>, u32>,
@@ -82,6 +81,10 @@ impl Compressor for LZW {
 
         let size = (pow + 7) / 8;
         let result_len = (writes * size + 1) as usize;
+        if result_len > src.len() {
+            return src.to_vec();
+        }
+
         let mut result = Vec::with_capacity(result_len);
         result.push(size as u8);
         for i in 0..writes as usize{
@@ -167,12 +170,7 @@ mod lzw_test {
 
         let compressed = lzw.compress(&uncompressed);
 
-        let expected = vec![
-            2, 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8,
-            0, 9, 0, 0, 1, 2, 1, 4, 0, 3, 1, 5, 1, 7, 0, 10, 1, 13,
-            1, 6, 1, 8, 1, 4, 1, 2, 1, 3, 1, 17, 1, 18, 1, 9, 0, 3,
-            0, 14, 1, 8, 1, 2, 0, 4, 1, 5, 0, 31, 1, 32, 1, 1, 0
-        ];
+        let expected = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 4, 5, 2, 3, 3, 4, 3, 4, 5, 6, 6, 7, 8, 9, 3, 5, 6, 7, 8, 9, 2, 4, 5, 5, 5, 5, 5, 5, 5, 1];
 
         assert_eq!(compressed, expected);
     }

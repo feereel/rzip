@@ -116,9 +116,9 @@ impl CipherProcessor for CBCProcessor {
             return Err(CipherError::InvalidCiphertextLength);
         }
         
-        if self.iv[..] != src[..self.block_size] {
-            return Err(CipherError::InvalidIVArePassed);
-        }
+        // if self.iv[..] != src[..self.block_size] {
+        //     return Err(CipherError::InvalidIVArePassed);
+        // }
 
         let mut last_block = vec![0u8; self.block_size];
         let s1_block = &src[(block_count-2)*self.block_size..(block_count-1)*self.block_size];

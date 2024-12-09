@@ -58,9 +58,11 @@ impl ArchiveFile {
         if self.is_encrypted() { return Err(ArchiveError::CompressingEncryptedData); }
         if self.is_compressed() { return Err(ArchiveError::FileAlreadyCompressed); }
 
+        let new_body = compressor.compress(&self.body);
+
         Ok(Self {
-            compressed: true,
-            body: compressor.compress(&self.body),
+            compressed:new_body.len() < self.size(),
+            body: new_body,
             ..self
         })
     }
