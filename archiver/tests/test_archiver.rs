@@ -18,6 +18,8 @@ use compressor::{
 use rand::Rng;
 
 const TEST_FOLDER: &str = "tests/static/";
+const ZIP_PATH: &str = "tests/zip/archive.rz";
+const UNZIP_DIR: &str = "tests/zip/unzip";
 
 fn get_path(path: &str) -> PathBuf {
     let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -41,20 +43,27 @@ fn get_cbc_processor() -> CBCProcessor {
 }
 
 #[test]
-fn zip_compress_encrypt_result() {
+fn zip_unzip_compress_result() {
     let compressor:Arc<dyn Compressor> = Arc::new(LZW::new());
-    let processor:Arc<dyn CipherProcessor>  = Arc::new(get_cbc_processor());
 
     let target_path = get_path(TEST_FOLDER);
     let n_workers = 8;
 
-    let mut archiver = Archiver::new(&target_path, n_workers, Some(compressor), Some(processor));
-    let without_errors = archiver.zip().unwrap();
+    let mut archiver = Archiver::new(&target_path, n_workers, Some(compressor.clone()), None);
+
+    let output_path = get_path(ZIP_PATH);
+    let without_errors = archiver.zip(&output_path).unwrap();
 
     assert_eq!(without_errors, 4);
 
-    for i in 0..4 {
-        assert!(archiver.afiles[i].is_compressed());
-        assert!(archiver.afiles[i].is_encrypted());
-    }
+    let target_path = get_path(ZIP_PATH);
+
+    println!("{:?}", target_path);
+    let mut archiver = Archiver::new(&target_path, n_workers, Some(compressor.clone()), None);
+
+    let output_dir = get_path(UNZIP_DIR);
+    let without_errors = archiver.unzip(&output_dir).unwrap();
+
+    assert_eq!(without_errors, 4);
 }
+

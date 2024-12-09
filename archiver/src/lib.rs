@@ -8,6 +8,8 @@ use std::fs::File;
 use std::io::Write;
 use std::io::Read;
 use std::iter::zip;
+use std::sync::mpsc::Receiver;
+use std::sync::mpsc::Sender;
 use std::sync::Arc;
 use std::path::Path;
 
@@ -49,24 +51,23 @@ pub struct Archiver {
     n_workers: usize,
     processor: Option<Arc<dyn CipherProcessor>>,
     compressor: Option<Arc<dyn Compressor>>,
-    pub afiles: Vec<ArchiveFile>,
+    rx: Option<Receiver<Result<afile::ArchiveFile, ArchiveError>>>,
 }
 
 impl Archiver {
     pub fn new(target_path: &Path, n_workers: usize, compressor: Option<Arc<dyn Compressor>>, processor: Option<Arc<dyn CipherProcessor>>) -> Self {
         let target_path = target_path.to_string_lossy().into_owned();
         
-        let afiles = Vec::new();
         Self {
             target_path,
             n_workers,
             processor,
             compressor,
-            afiles,
+            rx: None,
         }
     }
 
-    pub fn zip(&mut self) -> Result<usize, ArchiveError> {
+    pub fn zip(&mut self, output_path: &Path) -> Result<usize, ArchiveError> {
         let workers = Pool::<ThunkWorker<Result<ArchiveFile, ArchiveError>>>::new(self.n_workers);
 
         let target_path = Path::new(&self.target_path).to_owned();
@@ -75,17 +76,13 @@ impl Archiver {
 
         println!("Total files: {}", n_jobs);
 
-        let mut i = 0;
         let (tx, rx) = channel();
+        self.rx = Some(rx);
         for path in paths {
             let compressor = self.compressor.clone();
             let processor = self.processor.clone();
             let target_path_clone = target_path.clone();
-
-            i += 1;
-            if i % 100 == 0  {
-                println!("Files sended: {}/{}", i, n_jobs);
-            }
+            println!("target_path: {}", target_path_clone.to_str().unwrap());
 
             workers.execute_to(tx.clone(), Thunk::of(move ||{
                 worker_zip(&path, &target_path_clone, compressor, processor)
@@ -93,43 +90,34 @@ impl Archiver {
             ));
         }
 
-        let mut without_errors = 0;
-
-        let afiles: Vec<ArchiveFile> = rx.iter()
-            .take(n_jobs as usize)
-            .filter_map(|result| {
-                match result {
-                    Ok(afile) => {
-                        without_errors += 1;
-                        println!("Files finished: {}/{}, size: {}, path: {}", without_errors, n_jobs, afile.size(), afile.rel_path);
-                        Some(afile)
-                    } ,
-                    Err(e) => {
-                        eprintln!("Error while archive ArchiveFile: {:?}", e);
-                        None
-                    }
-                }
-            })
-            .collect();
-        
-        println!("Done");
-        self.afiles.extend(afiles);
+        let without_errors = self.store_archive(output_path, n_jobs)?;
+        self.rx = None;
 
         Ok(without_errors)
     }
 
-    pub fn unzip(&mut self) -> Result<usize, ArchiveError> {
+    pub fn unzip(&mut self, output_dir: &Path) -> Result<usize, ArchiveError> {
+        let file = File::open(&self.target_path).map_err(|_| ArchiveError::FilePathError)?;
+        let (afiles_count, encrypted) = self.load_archive_header(&file)?;
+        
         let workers = Pool::<ThunkWorker<Result<ArchiveFile, ArchiveError>>>::new(self.n_workers);
-        let n_jobs = self.afiles.len();
-
 
         let mut i = 0;
         let (tx, rx) = channel();
-        while let Some(afile) = self.afiles.pop() {
+        self.rx = Some(rx);
+
+        for _ in 0..afiles_count {
+            let afile = Archiver::load_afile(&file, encrypted)?;
+            println!("afile.rel_path: {:?}", afile.rel_path);
+            println!("afile.compressed: {:?}", afile.is_compressed());
+            println!("afile.encrypted: {:?}", afile.is_encrypted());
+            println!("afile.size: {:?}", afile.size());
+            println!("afile.body_size: {:?}", afile.body_size());
+
             let compressor = self.compressor.clone();
             let processor = self.processor.clone();
 
-            println!("Files sended: {}/{}", i, n_jobs);
+            println!("Files sended: {}/{}", i, afiles_count);
             i += 1;
         
             workers.execute_to(tx.clone(), Thunk::of(move || {
@@ -137,32 +125,13 @@ impl Archiver {
             }));
         }
 
-        let mut without_errors = 0;
-
-        let afiles: Vec<ArchiveFile> = rx.iter()
-            .take(n_jobs as usize)
-            .filter_map(|result| {
-                match result {
-                    Ok(afile) => {
-                        println!("Files finished: {}/{}", without_errors, n_jobs);
-                        without_errors += 1;
-                        Some(afile)
-                    } ,
-                    Err(e) => {
-                        eprintln!("Error while archive ArchiveFile: {:?}", e);
-                        None
-                    }
-                }
-            })
-            .collect();
-        
-        self.afiles.extend(afiles);
+        let without_errors = self.store_folder(output_dir, afiles_count)?;
 
         Ok(without_errors)
     }
 
-    fn store_archive_header(&self, file: &File) -> Result<(), ArchiveError> {
-        let files_count = self.afiles.len().to_ne_bytes().to_vec();
+    fn store_archive_header(&self, file: &File, afiles_count: usize) -> Result<(), ArchiveError> {
+        let files_count = afiles_count.to_ne_bytes().to_vec();
         // println!("files_count length: {}", files_count.len());
         let encrypted: Vec<u8> = if let Some(_) = self.processor {vec![1,0,0,0,0,0,0,0]} else {vec![0,0,0,0,0,0,0,0]};
         // println!("encrypted length: {}", encrypted.len());
@@ -275,8 +244,17 @@ impl Archiver {
         Ok(())
     }
 
-    pub fn store_folder(&mut self, output_dir: &Path) -> Result<(), ArchiveError> {
-        while let Some(afile) = self.afiles.pop() {
+    fn store_folder(&mut self, output_dir: &Path, afiles_count: usize) -> Result<usize, ArchiveError> {
+        let rx = self.rx.as_mut().unwrap()
+            .iter()
+            .take(afiles_count);
+
+        let mut without_errors = 0;
+        
+        for result in rx {
+            let afile = result?;
+            println!("Files unziped: {}/{}, size: {}, path: {}", without_errors, afiles_count, afile.size(), afile.rel_path);
+
             let output_path = output_dir.join(&afile.rel_path);
 
             let prefix = output_path.parent().unwrap();
@@ -284,60 +262,50 @@ impl Archiver {
 
             let file = File::create(output_path).map_err(|_| ArchiveError::FilePathError)?;
             Archiver::store_data(&file, &afile.take_body())?;
+
+            without_errors += 1;
         }
         
-        Ok(())
+        Ok(without_errors)
     }
 
-    pub fn store_archive(&mut self, output_path: &Path) -> Result<(), ArchiveError> {
+    fn store_archive(&mut self, output_path: &Path, afiles_count: usize) -> Result<usize, ArchiveError> {
         let file = File::create(output_path).map_err(|_| ArchiveError::FilePathError)?;
 
-        self.store_archive_header(&file)?;
-        
-        while let Some(afile) = self.afiles.pop() {
+        self.store_archive_header(&file, afiles_count)?;
+
+        let mut without_errors = 0;
+
+        let rx = self.rx.as_mut().unwrap()
+            .iter()
+            .take(afiles_count);
+
+        for result in rx {
+            let afile = result?;
+            println!("Files zipped: {}/{}, size: {}, path: {}", without_errors, afiles_count, afile.size(), afile.rel_path);
+
             Archiver::store_afile(&file, afile)?;
+            
+            without_errors += 1;
         }
-
-        Ok(())
+        
+        Ok(without_errors)
     }
 
-    pub fn load_archive(&mut self) -> Result<(), ArchiveError> {
-        let file = File::open(&self.target_path).map_err(|_| ArchiveError::FilePathError)?;
-
-        // println!("file {:?} opened", self.target_path);
-
-        let (files_count, encrypted) = self.load_archive_header(&file)?;
-
-        // println!("files_count: {files_count}, encrypted: {encrypted}");
-
-        for _ in 0..files_count {
-            let afile = Archiver::load_afile(&file, encrypted)?;
-            // println!("Readed afile: {}", afile.rel_path);
-            self.afiles.push(afile);
-        }
-
-        Ok(())
-    }
 }
 
 fn worker_zip(path: &Path, base_dir: &Path, compressor: Option<Arc<dyn Compressor>>, processor: Option<Arc<dyn CipherProcessor>>) -> Result<ArchiveFile, ArchiveError> {
     let afile = ArchiveFile::from_file(&path, &base_dir)?;
-
-    // println!("Readed: {path:?}");
 
     let afile = match compressor {
         Some(c) => afile.compress(c)?,
         _ => afile,
     };
 
-    // println!("Compressed: {path:?}");
-
     let afile = match processor {
         Some(p) => afile.encrypt(p)?,
         None => afile,
     };
-
-    // println!("Encrypted: {path:?}");
 
     Ok(afile)
 }
