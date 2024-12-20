@@ -43,7 +43,7 @@ impl Compressor for LZW {
         let mut dict = self.init_dict.clone();
         
         let mut tmp: Vec<u8> = Vec::new();
-        let mut key = Vec::new();
+        let mut key: Vec<u8> = Vec::new();
 
         let mut writes = 0;
 
@@ -80,12 +80,17 @@ impl Compressor for LZW {
         }
 
         let size = (pow + 7) / 8;
-        let result_len = (writes * size + 1) as usize;
+        let result_len = (writes * size + 2) as usize;
         if result_len > src.len() {
-            return src.to_vec();
+            let mut dst: Vec<u8> = Vec::with_capacity(1+src.len());
+            dst.push(0xff);
+            dst.extend_from_slice(src);
+        
+            return dst
         }
 
         let mut result = Vec::with_capacity(result_len);
+        result.push(0xf0);
         result.push(size as u8);
         for i in 0..writes as usize{
             for j in 0..size as usize {
@@ -102,8 +107,16 @@ impl Compressor for LZW {
             return Ok(Vec::new());
         }
 
-        let size: usize = src[0] as usize;
-        if (src.len() - 1) % size != 0{
+        if src[0] == 0xff {
+            let dst: Vec<u8> = src[1..].to_vec();
+        
+            return Ok(dst)
+        } else if src[0] != 0xf0 {
+            return Err(CompressorError::DecompressErrorWithCode)
+        }
+        
+        let size: usize = src[1] as usize;
+        if (src.len() - 2) % size != 0{
             return Err(CompressorError::IncorrectSrcValue);
         }
 
@@ -113,7 +126,7 @@ impl Compressor for LZW {
             dict.push(vec![word as u8]);
         }
 
-        let mut src = src[1..]
+        let mut src = src[2..]
             .chunks(size)
             .map(|chunk| {
                 let mut array = [0u8; 4];
@@ -170,7 +183,7 @@ mod lzw_test {
 
         let compressed = lzw.compress(&uncompressed);
 
-        let expected = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 4, 5, 2, 3, 3, 4, 3, 4, 5, 6, 6, 7, 8, 9, 3, 5, 6, 7, 8, 9, 2, 4, 5, 5, 5, 5, 5, 5, 5, 1];
+        let expected = vec![0xff, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 3, 4, 5, 6, 7, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 4, 5, 2, 3, 3, 4, 3, 4, 5, 6, 6, 7, 8, 9, 3, 5, 6, 7, 8, 9, 2, 4, 5, 5, 5, 5, 5, 5, 5, 1];
 
         assert_eq!(compressed, expected);
     }
@@ -179,17 +192,17 @@ mod lzw_test {
     fn decompress_errors() {
         let lzw = LZW::new();
 
-        let compressed: Vec<u8> = vec![4,0,0,0,0,1,0,0,0,2,0,0,];
+        let compressed: Vec<u8> = vec![0xf0, 4,0,0,0,0,1,0,0,0,2,0,0,];
         let r = lzw.decompress(&compressed);
         assert!(r.is_err());
         assert_eq!(r.unwrap_err(), CompressorError::IncorrectSrcValue);
 
-        let compressed: Vec<u8> = vec![2,0,0,2];
+        let compressed: Vec<u8> = vec![0xf0, 2,0,0,2];
         let r = lzw.decompress(&compressed);
         assert!(r.is_err());
         assert_eq!(r.unwrap_err(), CompressorError::IncorrectSrcValue);
 
-        let compressed: Vec<u8> = vec![3,1,0,0];
+        let compressed: Vec<u8> = vec![0xf0, 3,1,0,0];
         let r = lzw.decompress(&compressed);
 
         assert!(!r.is_err());
@@ -207,7 +220,7 @@ mod lzw_test {
         let lzw = LZW::new();
 
         let compressed = vec![
-            2, 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8,
+            0xf0, 2, 0, 0, 1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0, 7, 0, 8,
             0, 9, 0, 0, 1, 2, 1, 4, 0, 3, 1, 5, 1, 7, 0, 10, 1, 13,
             1, 6, 1, 8, 1, 4, 1, 2, 1, 3, 1, 17, 1, 18, 1, 9, 0, 3,
             0, 14, 1, 8, 1, 2, 0, 4, 1, 5, 0, 31, 1, 32, 1, 1, 0

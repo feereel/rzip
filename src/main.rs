@@ -103,7 +103,7 @@ fn get_args() -> Args {
     
     let mut compressor = None;
     let mut processor = None;
-    if compress {
+    if compress || unzip {
         compressor = Some(get_compressor());
     }
 

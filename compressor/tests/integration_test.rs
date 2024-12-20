@@ -16,12 +16,8 @@ fn compress_decompress_same_value() {
         let uncompressed1: Vec<u8> = (0..length).map(|_| rng.gen()).collect();
 
         let compressed = lzw.compress(&uncompressed1);
-        if compressed.len() < uncompressed1.len() {
-            let uncompressed2 = lzw.decompress(&compressed).unwrap();
-            assert_eq!(uncompressed1, uncompressed2);
-        } else {
-            assert_eq!(uncompressed1, compressed);
-        }
+        let uncompressed2 = lzw.decompress(&compressed).unwrap();
+        assert_eq!(uncompressed1, uncompressed2);
     }
 }
 
@@ -38,11 +34,7 @@ fn compress_decompress_compressor() {
 
         let compressed = lzw.compress(&uncompressed1);
 
-        if compressed.len() < uncompressed1.len() {
-            let uncompressed2 = lzw.decompress(&compressed).unwrap();
-            assert_eq!(uncompressed1, uncompressed2);
-        } else {
-            assert_eq!(uncompressed1, compressed);
-        }
+        let uncompressed2 = lzw.decompress(&compressed).unwrap();
+        assert_eq!(uncompressed1, uncompressed2);
     }
 }

@@ -61,7 +61,7 @@ impl ArchiveFile {
         let new_body = compressor.compress(&self.body);
 
         Ok(Self {
-            compressed:new_body.len() < self.size(),
+            compressed: true,
             body: new_body,
             ..self
         })
